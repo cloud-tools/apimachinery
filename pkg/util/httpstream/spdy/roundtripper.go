@@ -29,6 +29,7 @@ import (
 	"net/http/httputil"
 	"net/url"
 	"strings"
+	"time"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -209,6 +210,7 @@ func (s *SpdyRoundTripper) dialWithoutProxy(url *url.URL) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
+	conn.SetDeadline(time.Now().Add(time.Minute * 3))
 
 	// Return if we were configured to skip validation
 	if s.tlsConfig != nil && s.tlsConfig.InsecureSkipVerify {
