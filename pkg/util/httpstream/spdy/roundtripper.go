@@ -240,10 +240,12 @@ func (s *SpdyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 
-	deadline := time.Now().Add(s.Timeout)
-	err = conn.SetDeadline(deadline)
-	if err != nil {
-		return nil, err
+	if s.Timeout != 0 {
+		deadline := time.Now().Add(s.Timeout)
+		err = conn.SetDeadline(deadline)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	err = req.Write(conn)
