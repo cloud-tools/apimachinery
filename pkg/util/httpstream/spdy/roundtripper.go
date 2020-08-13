@@ -26,6 +26,7 @@ import (
 	"net/http"
 	"net/http/httputil"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 
@@ -54,6 +55,9 @@ type SpdyRoundTripper struct {
 	// conn is the underlying network connection to the remote server.
 	conn net.Conn
 
+	// timeout is a timeout for underlying network connection
+	Timeout time.Duration
+
 	// Dialer is the dialer used to connect.  Used if non-nil.
 	Dialer *net.Dialer
 
@@ -71,7 +75,18 @@ func NewRoundTripper(tlsConfig *tls.Config) httpstream.UpgradeRoundTripper {
 // NewSpdyRoundTripper creates a new SpdyRoundTripper that will use
 // the specified tlsConfig. This function is mostly meant for unit tests.
 func NewSpdyRoundTripper(tlsConfig *tls.Config) *SpdyRoundTripper {
-	return &SpdyRoundTripper{tlsConfig: tlsConfig}
+	var timeout time.Duration = 0
+	var err error
+
+	timeoutEnv := os.Getenv("HEKETI_SPDY_CONNECTION_TIMEOUT")
+	if timeoutEnv != "" {
+		timeout, err = time.ParseDuration(timeoutEnv)
+		if err != nil {
+			fmt.Printf("Unable to parse spdy timeout, setting to no timeout")
+		}
+	}
+
+	return &SpdyRoundTripper{tlsConfig: tlsConfig, Timeout: timeout}
 }
 
 // implements pkg/util/net.TLSClientConfigHolder for proper TLS checking during proxying with a spdy roundtripper
@@ -182,7 +197,6 @@ func (s *SpdyRoundTripper) dialWithoutProxy(url *url.URL) (net.Conn, error) {
 	if err != nil {
 		return nil, err
 	}
-	conn.SetDeadline(time.Now().Add(time.Minute * 3))
 
 	// Return if we were configured to skip validation
 	if s.tlsConfig != nil && s.tlsConfig.InsecureSkipVerify {
@@ -222,6 +236,12 @@ func (s *SpdyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 	req.Header.Add(httpstream.HeaderUpgrade, HeaderSpdy31)
 
 	conn, err := s.dial(req)
+	if err != nil {
+		return nil, err
+	}
+
+	deadline := time.Now().Add(s.Timeout)
+	err = conn.SetDeadline(deadline)
 	if err != nil {
 		return nil, err
 	}
