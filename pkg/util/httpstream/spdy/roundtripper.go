@@ -78,7 +78,7 @@ func NewSpdyRoundTripper(tlsConfig *tls.Config) *SpdyRoundTripper {
 	var timeout time.Duration = 0
 	var err error
 
-	timeoutEnv := os.Getenv("HEKETI_SPDY_CONNECTION_TIMEOUT")
+	timeoutEnv := os.Getenv("K8S_SPDY_CONNECTION_TIMEOUT")
 	if timeoutEnv != "" {
 		timeout, err = time.ParseDuration(timeoutEnv)
 		if err != nil {
