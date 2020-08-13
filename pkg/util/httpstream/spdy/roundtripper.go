@@ -22,6 +22,12 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
+	apierrors "k8s.io/apimachinery/pkg/api/errors"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	"k8s.io/apimachinery/pkg/runtime/serializer"
+	"k8s.io/apimachinery/pkg/util/httpstream"
+	"k8s.io/apimachinery/third_party/forked/golang/netutil"
 	"net"
 	"net/http"
 	"net/http/httputil"
@@ -29,13 +35,6 @@ import (
 	"os"
 	"strings"
 	"time"
-
-	apierrors "k8s.io/apimachinery/pkg/api/errors"
-	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	"k8s.io/apimachinery/pkg/runtime"
-	"k8s.io/apimachinery/pkg/runtime/serializer"
-	"k8s.io/apimachinery/pkg/util/httpstream"
-	"k8s.io/apimachinery/third_party/forked/golang/netutil"
 )
 
 // SpdyRoundTripper knows how to upgrade an HTTP request to one that supports
@@ -55,9 +54,6 @@ type SpdyRoundTripper struct {
 	// conn is the underlying network connection to the remote server.
 	conn net.Conn
 
-	// timeout is a timeout for underlying network connection
-	Timeout time.Duration
-
 	// Dialer is the dialer used to connect.  Used if non-nil.
 	Dialer *net.Dialer
 
@@ -75,18 +71,7 @@ func NewRoundTripper(tlsConfig *tls.Config) httpstream.UpgradeRoundTripper {
 // NewSpdyRoundTripper creates a new SpdyRoundTripper that will use
 // the specified tlsConfig. This function is mostly meant for unit tests.
 func NewSpdyRoundTripper(tlsConfig *tls.Config) *SpdyRoundTripper {
-	var timeout time.Duration = 0
-	var err error
-
-	timeoutEnv := os.Getenv("K8S_SPDY_CONNECTION_TIMEOUT")
-	if timeoutEnv != "" {
-		timeout, err = time.ParseDuration(timeoutEnv)
-		if err != nil {
-			fmt.Printf("Unable to parse spdy timeout, setting to no timeout")
-		}
-	}
-
-	return &SpdyRoundTripper{tlsConfig: tlsConfig, Timeout: timeout}
+	return &SpdyRoundTripper{tlsConfig: tlsConfig}
 }
 
 // implements pkg/util/net.TLSClientConfigHolder for proper TLS checking during proxying with a spdy roundtripper
@@ -240,14 +225,6 @@ func (s *SpdyRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 		return nil, err
 	}
 
-	if s.Timeout != 0 {
-		deadline := time.Now().Add(s.Timeout)
-		err = conn.SetDeadline(deadline)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	err = req.Write(conn)
 	if err != nil {
 		return nil, err
@@ -293,7 +270,16 @@ func (s *SpdyRoundTripper) NewConnection(resp *http.Response) (httpstream.Connec
 		return spdyConn, err
 	}
 
-	spdyConn.SetIdleTimeout(time.Minute)
+	timeoutEnv := os.Getenv("K8S_SPDY_CONNECTION_IDLE_TIMEOUT")
+	if timeoutEnv != "" {
+		timeout, err := time.ParseDuration(timeoutEnv)
+		if err != nil {
+			fmt.Printf("Unable to parse spdy timeout, setting to no timeout")
+		} else if timeout != 0 {
+			spdyConn.SetIdleTimeout(timeout)
+		}
+	}
+
 	return spdyConn, nil
 }
 
