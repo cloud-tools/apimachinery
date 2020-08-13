@@ -288,7 +288,13 @@ func (s *SpdyRoundTripper) NewConnection(resp *http.Response) (httpstream.Connec
 		return nil, fmt.Errorf("unable to upgrade connection: %s", responseError)
 	}
 
-	return NewClientConnection(s.conn)
+	spdyConn, err := NewClientConnection(s.conn)
+	if err != nil {
+		return spdyConn, err
+	}
+
+	spdyConn.SetIdleTimeout(time.Minute)
+	return spdyConn, nil
 }
 
 // statusScheme is private scheme for the decoding here until someone fixes the TODO in NewConnection
