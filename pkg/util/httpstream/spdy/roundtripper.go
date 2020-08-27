@@ -22,18 +22,19 @@ import (
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
-	"net"
-	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"strings"
-
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	"k8s.io/apimachinery/pkg/runtime/serializer"
 	"k8s.io/apimachinery/pkg/util/httpstream"
 	"k8s.io/apimachinery/third_party/forked/golang/netutil"
+	"net"
+	"net/http"
+	"net/http/httputil"
+	"net/url"
+	"os"
+	"strings"
+	"time"
 )
 
 // SpdyRoundTripper knows how to upgrade an HTTP request to one that supports
@@ -264,7 +265,22 @@ func (s *SpdyRoundTripper) NewConnection(resp *http.Response) (httpstream.Connec
 		return nil, fmt.Errorf("unable to upgrade connection: %s", responseError)
 	}
 
-	return NewClientConnection(s.conn)
+	spdyConn, err := NewClientConnection(s.conn)
+	if err != nil {
+		return spdyConn, err
+	}
+
+	timeoutEnv := os.Getenv("K8S_SPDY_CONNECTION_IDLE_TIMEOUT")
+	if timeoutEnv != "" {
+		timeout, err := time.ParseDuration(timeoutEnv)
+		if err != nil {
+			fmt.Printf("Unable to parse spdy timeout, setting to no timeout")
+		} else if timeout != 0 {
+			spdyConn.SetIdleTimeout(timeout)
+		}
+	}
+
+	return spdyConn, nil
 }
 
 // statusScheme is private scheme for the decoding here until someone fixes the TODO in NewConnection
